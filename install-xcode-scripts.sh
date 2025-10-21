@@ -2,12 +2,16 @@
 # Installer for lightweight Xcode build & log capture scripts
 # Based on Igor Makarov's approach: https://gist.github.com/igor-makarov/e46c7827493016765d6431b6bd1d2394
 #
-# Usage: bash install-xcode-scripts.sh
+# Usage:
+#   bash install-xcode-scripts.sh                    # Install in current directory
+#   bash install-xcode-scripts.sh /path/to/project   # Install in target directory
+#
 # This script will:
 # - Create .claude/scripts/ directory
 # - Create ./build/logs/ and ./build/xcodebuild/ directories
 # - Install capture-logs, stop-logs, and xcodebuild scripts
 # - Copy building-with-xcode.md documentation
+# - Create/update CLAUDE.md and AGENTS.md if they exist
 # - Make all scripts executable
 
 set -e
@@ -21,18 +25,29 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Get script directory (works from anywhere)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get target directory - use argument or current directory
+TARGET_DIR="${1:-.}"
 
+# Validate target directory exists
+if [ ! -d "$TARGET_DIR" ]; then
+	echo "❌ Error: Target directory does not exist: $TARGET_DIR"
+	exit 1
+fi
+
+# Convert to absolute path
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+
+echo "📂 Installing to: $TARGET_DIR"
+echo ""
 echo "📂 Creating directories..."
-mkdir -p "${SCRIPT_DIR}/.claude/scripts"
-mkdir -p "${SCRIPT_DIR}/build/logs"
-mkdir -p "${SCRIPT_DIR}/build/xcodebuild"
+mkdir -p "${TARGET_DIR}/.claude/scripts"
+mkdir -p "${TARGET_DIR}/build/logs"
+mkdir -p "${TARGET_DIR}/build/xcodebuild"
 echo "   ✅ Directories created"
 
 echo ""
 echo "📝 Creating capture-logs script..."
-cat > "${SCRIPT_DIR}/.claude/scripts/capture-logs" << 'CAPTURE_LOGS_SCRIPT'
+cat > "${TARGET_DIR}/.claude/scripts/capture-logs" << 'CAPTURE_LOGS_SCRIPT'
 #!/bin/bash
 # Captures visionOS/iOS simulator logs to timestamped file
 # Usage: ./claude/scripts/capture-logs <subsystem-or-bundle-id> [simulator-id]
@@ -75,12 +90,12 @@ echo "🛑 To stop capturing, run: ./claude/scripts/stop-logs"
 echo "📂 Logs will be saved to: $OUTPUT"
 CAPTURE_LOGS_SCRIPT
 
-chmod +x "${SCRIPT_DIR}/.claude/scripts/capture-logs"
+chmod +x "${TARGET_DIR}/.claude/scripts/capture-logs"
 echo "   ✅ capture-logs installed"
 
 echo ""
 echo "📝 Creating stop-logs script..."
-cat > "${SCRIPT_DIR}/.claude/scripts/stop-logs" << 'STOP_LOGS_SCRIPT'
+cat > "${TARGET_DIR}/.claude/scripts/stop-logs" << 'STOP_LOGS_SCRIPT'
 #!/bin/bash
 # Stops the active log capture process
 # Usage: ./claude/scripts/stop-logs
@@ -105,12 +120,12 @@ else
 fi
 STOP_LOGS_SCRIPT
 
-chmod +x "${SCRIPT_DIR}/.claude/scripts/stop-logs"
+chmod +x "${TARGET_DIR}/.claude/scripts/stop-logs"
 echo "   ✅ stop-logs installed"
 
 echo ""
 echo "📝 Creating xcodebuild wrapper script..."
-cat > "${SCRIPT_DIR}/.claude/scripts/xcodebuild" << 'XCODEBUILD_SCRIPT'
+cat > "${TARGET_DIR}/.claude/scripts/xcodebuild" << 'XCODEBUILD_SCRIPT'
 #!/bin/bash
 # Wrapper around xcodebuild that captures output to timestamped files
 # This follows Igor Makarov's approach: https://gist.github.com/igor-makarov/e46c7827493016765d6431b6bd1d2394
@@ -156,12 +171,12 @@ echo "   grep -i warning '$OUTPUT_FILE'"
 exit "$EXIT_CODE"
 XCODEBUILD_SCRIPT
 
-chmod +x "${SCRIPT_DIR}/.claude/scripts/xcodebuild"
+chmod +x "${TARGET_DIR}/.claude/scripts/xcodebuild"
 echo "   ✅ xcodebuild installed"
 
 echo ""
 echo "📝 Creating documentation..."
-cat > "${SCRIPT_DIR}/.claude/building-with-xcode.md" << 'DOCUMENTATION'
+cat > "${TARGET_DIR}/.claude/building-with-xcode.md" << 'DOCUMENTATION'
 # Building with Xcode - Claude Instructions
 
 This document explains how to use the lightweight build and log capture wrapper scripts instead of the heavy XcodeBuildMCP server.
@@ -416,6 +431,118 @@ When working with Claude Code:
 DOCUMENTATION
 
 echo "   ✅ building-with-xcode.md created"
+
+echo ""
+echo "📝 Updating project documentation..."
+
+# Create or update CLAUDE.md
+CLAUDE_CONTENT="## Xcode Build & Log Capture Scripts
+
+This project uses lightweight bash wrappers instead of XcodeBuildMCP:
+
+### Scripts
+- **\`./claude/scripts/xcodebuild\`** - Wraps xcodebuild, captures output to \`./build/xcodebuild/build-*.txt\`
+- **\`./claude/scripts/capture-logs\`** - Captures app logs to \`./build/logs/logs-*.txt\`
+- **\`./claude/scripts/stop-logs\`** - Stops active log capture
+
+### Usage
+\`\`\`bash
+# Build
+./claude/scripts/xcodebuild -workspace MyApp.xcworkspace -scheme MyApp build
+
+# Capture logs
+./claude/scripts/capture-logs com.yourapp.vision
+./claude/scripts/stop-logs
+
+# Search results
+grep -i error ./build/xcodebuild/build-*.txt
+grep \"ViewController\" ./build/logs/logs-*.txt
+\`\`\`
+
+For details, see \`./\.claude/building-with-xcode.md\`"
+
+if [ -f "${TARGET_DIR}/CLAUDE.md" ]; then
+	if ! grep -q "xcode-cli-tools\|Xcode Build & Log Capture" "${TARGET_DIR}/CLAUDE.md"; then
+		echo "" >> "${TARGET_DIR}/CLAUDE.md"
+		echo "$CLAUDE_CONTENT" >> "${TARGET_DIR}/CLAUDE.md"
+		echo "   ✅ CLAUDE.md updated"
+	else
+		echo "   ℹ️  CLAUDE.md already contains Xcode tools info"
+	fi
+else
+	echo "# Project Configuration
+
+$CLAUDE_CONTENT" > "${TARGET_DIR}/CLAUDE.md"
+	echo "   ✅ CLAUDE.md created"
+fi
+
+# Create or update AGENTS.md
+AGENTS_CONTENT="## Xcode CLI Tools Integration
+
+Use these lightweight bash wrappers for all Xcode operations.
+
+### When to Use Each Script
+
+| Task | Script | Output | Approach |
+|------|--------|--------|----------|
+| Build app | \`./claude/scripts/xcodebuild [args]\` | \`./build/xcodebuild/build-*.txt\` | Run, grep for errors |
+| Capture logs | \`./claude/scripts/capture-logs <bundle-id>\` | \`./build/logs/logs-*.txt\` | Start, user launches app, stop, grep |
+| Stop logs | \`./claude/scripts/stop-logs\` | Console | Stop active capture |
+
+### Key Rules
+
+1. **Never use \`-clean\`** - Waste time, use build cache
+2. **Search output, don't load it** - Use \`grep -i error ./build/xcodebuild/build-*.txt\`
+3. **Specify workspace/scheme** - Required for every build command
+4. **Subsystem filtering** - Use exact bundle ID in capture-logs
+5. **File-based workflow** - All outputs saved timestamped, search via grep
+
+### Examples
+
+**Build for visionOS Simulator:**
+\`\`\`bash
+./claude/scripts/xcodebuild -workspace MyApp.xcworkspace -scheme MyApp build -destination 'generic/platform=visionOS Simulator'
+\`\`\`
+
+**Debug log capture:**
+\`\`\`bash
+# User: \"Capture logs from my app while I test\"
+./claude/scripts/capture-logs com.mycompany.myapp
+# User launches app in Xcode
+# User triggers issue
+# User: \"Stop capturing logs\"
+./claude/scripts/stop-logs
+# Search: grep -i error ./build/logs/logs-*.txt
+\`\`\`
+
+**Find build errors:**
+\`\`\`bash
+grep -i \"error:\" ./build/xcodebuild/build-*.txt
+\`\`\`
+
+### Token Efficiency
+
+- Output files are timestamped and searched via grep
+- Never load full build outputs into context
+- Use \`grep -C 3 \"error\"\` to show context
+- Delete old logs as needed: \`rm ./build/logs/logs-*.txt\`
+
+For full docs: \`./\.claude/building-with-xcode.md\`"
+
+if [ -f "${TARGET_DIR}/AGENTS.md" ]; then
+	if ! grep -q "xcode-cli-tools\|Xcode CLI Tools Integration" "${TARGET_DIR}/AGENTS.md"; then
+		echo "" >> "${TARGET_DIR}/AGENTS.md"
+		echo "$AGENTS_CONTENT" >> "${TARGET_DIR}/AGENTS.md"
+		echo "   ✅ AGENTS.md updated"
+	else
+		echo "   ℹ️  AGENTS.md already contains Xcode tools info"
+	fi
+else
+	echo "# Agent Instructions
+
+$AGENTS_CONTENT" > "${TARGET_DIR}/AGENTS.md"
+	echo "   ✅ AGENTS.md created"
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
