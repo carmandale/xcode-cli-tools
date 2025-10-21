@@ -1,0 +1,23 @@
+# Build outputs
+build/
+*.xcarchive
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+xcuserdata/
+
+# Logs
+*.log
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
