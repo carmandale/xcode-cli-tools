@@ -1,0 +1,42 @@
+#!/bin/bash
+# Captures visionOS/iOS simulator logs to timestamped file
+# Usage: ./claude/scripts/capture-logs <subsystem-or-bundle-id> [simulator-id]
+# Example: ./claude/scripts/capture-logs com.yourapp.vision
+# Example: ./claude/scripts/capture-logs com.yourapp.vision booted
+
+set -e
+
+if [ $# -eq 0 ]; then
+  echo "❌ Usage: ./claude/scripts/capture-logs <subsystem-or-bundle-id> [simulator-id]"
+  echo "   Example: ./claude/scripts/capture-logs com.yourapp.vision"
+  echo "   Example: ./claude/scripts/capture-logs com.yourapp.vision booted"
+  exit 1
+fi
+
+SUBSYSTEM=$1
+SIM_ID=${2:-booted}
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+OUTPUT="./build/logs/logs-${TIMESTAMP}.txt"
+
+# Ensure output directory exists
+mkdir -p ./build/logs
+
+echo "📝 Starting log capture..."
+echo "   Subsystem: $SUBSYSTEM"
+echo "   Simulator: $SIM_ID"
+echo "   Output: $OUTPUT"
+echo ""
+
+# Start capturing logs filtered by subsystem in background
+# --level debug ensures Debug-level logs are captured (not just Info and Error)
+# --style compact provides readable formatting
+xcrun simctl spawn "$SIM_ID" log stream --level debug --style compact --predicate "subsystem == '${SUBSYSTEM}'" > "$OUTPUT" 2>&1 &
+PID=$!
+
+# Store the PID so we can stop it later
+echo "$PID" > ./build/logs/.last-capture-pid
+
+echo "✅ Log capture started"
+echo "🔢 Process ID: $PID"
+echo "🛑 To stop capturing, run: ./claude/scripts/stop-logs"
+echo "📂 Logs will be saved to: $OUTPUT"

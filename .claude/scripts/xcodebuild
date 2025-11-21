@@ -1,0 +1,43 @@
+#!/bin/bash
+# Wrapper around xcodebuild that captures output to timestamped files
+# This follows Igor Makarov's approach: https://gist.github.com/igor-makarov/e46c7827493016765d6431b6bd1d2394
+#
+# Usage: ./claude/scripts/xcodebuild <standard xcodebuild args>
+# Examples:
+#   ./claude/scripts/xcodebuild -workspace MyApp.xcworkspace -scheme MyApp build
+#   ./claude/scripts/xcodebuild -workspace MyApp.xcworkspace -scheme MyApp test -destination 'generic/platform=visionOS'
+
+set -e
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+OUTPUT_DIR="./build/xcodebuild"
+OUTPUT_FILE="$OUTPUT_DIR/build-${TIMESTAMP}.txt"
+
+# Ensure output directory exists
+mkdir -p "$OUTPUT_DIR"
+
+echo "🔨 Running xcodebuild..."
+echo "📝 Output will be saved to: $OUTPUT_FILE"
+echo ""
+
+# Run xcodebuild and capture output
+if xcodebuild "$@" > "$OUTPUT_FILE" 2>&1; then
+  EXIT_CODE=0
+else
+  EXIT_CODE=$?
+fi
+
+# Get file size
+FILE_SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
+
+echo ""
+echo "✅ xcodebuild completed"
+echo "📊 Exit code: $EXIT_CODE"
+echo "📦 Output size: $FILE_SIZE"
+echo "📂 Output file: $OUTPUT_FILE"
+echo ""
+echo "💡 Tip: Use grep to search the output, e.g.:"
+echo "   grep -i error '$OUTPUT_FILE'"
+echo "   grep -i warning '$OUTPUT_FILE'"
+
+exit "$EXIT_CODE"
