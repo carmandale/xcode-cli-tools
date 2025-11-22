@@ -78,7 +78,9 @@ echo "   Output: $OUTPUT"
 echo ""
 
 # Start capturing logs filtered by subsystem in background
-xcrun simctl spawn "$SIM_ID" log stream --predicate "subsystem == '${SUBSYSTEM}'" > "$OUTPUT" 2>&1 &
+# --level debug ensures Debug-level logs are captured (not just Info and Error)
+# --style compact provides readable formatting
+xcrun simctl spawn "$SIM_ID" log stream --level debug --style compact --predicate "subsystem == '${SUBSYSTEM}'" > "$OUTPUT" 2>&1 &
 PID=$!
 
 # Store the PID so we can stop it later

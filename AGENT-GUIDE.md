@@ -16,59 +16,228 @@
 3. **Never load entire build/log files** - Use grep to find what you need
 4. **Never assume the simulator** - Verify it's running with `xcrun simctl list`
 
-## Build Command Template
+## Complete Build, Install, and Log Workflow
+
+This is the VERIFIED working workflow. Follow these steps exactly.
+
+### Step 1: Build the App
+
+**CRITICAL:** Use `-derivedDataPath` to control build output location. This makes the `.app` file location predictable.
 
 ```bash
-./claude/scripts/xcodebuild \
-  -project ../orchestrator/orchestrator.xcodeproj \
+cd /path/to/your/project
+
+# For Simulator (iPad/iPhone)
+xcodebuild \
+  -project orchestrator.xcodeproj \
   -scheme orchestrator \
-  build \
-  -destination 'generic/platform=iOS Simulator'
+  -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)' \
+  -derivedDataPath ./build/DerivedData
+
+# For Simulator (visionOS)
+xcodebuild \
+  -project YourApp.xcodeproj \
+  -scheme YourApp \
+  -destination 'platform=visionOS Simulator,name=Apple Vision Pro' \
+  -derivedDataPath ./build/DerivedData
+
+# For Device (iPad/iPhone)
+xcodebuild \
+  -project orchestrator.xcodeproj \
+  -scheme orchestrator \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath ./build/DerivedData
+
+# For Device (visionOS)
+xcodebuild \
+  -project YourApp.xcodeproj \
+  -scheme YourApp \
+  -destination 'generic/platform=visionOS' \
+  -derivedDataPath ./build/DerivedData
 ```
 
-**For other platforms:**
-- iPad/iPhone Simulator: `-destination 'generic/platform=iOS Simulator'`
-- iPad/iPhone Device: `-destination generic/platform=iOS`
-- visionOS Simulator: `-destination 'generic/platform=visionOS Simulator'`
-- visionOS Device: `-destination generic/platform=visionOS`
+**Expected output:** `** BUILD SUCCEEDED **`
 
-## Log Capture Workflow
+**Built app location (Simulator):**
+- iOS: `./build/DerivedData/Build/Products/Debug-iphonesimulator/YourApp.app`
+- visionOS: `./build/DerivedData/Build/Products/Debug-xrsimulator/YourApp.app`
 
-**IMPORTANT: The scripts now include `--level debug` automatically - this captures useful logs!**
+**Built app location (Device):**
+- iOS: `./build/DerivedData/Build/Products/Debug-iphoneos/YourApp.app`
+- visionOS: `./build/DerivedData/Build/Products/Debug-xros/YourApp.app`
 
-### Step 1: Start capture BEFORE running the app
+**IMPORTANT:** The `.app` name uses the product name (often capitalized), not the scheme name:
+- Scheme: `orchestrator` → Product: `Orchestrator.app`
+
+### Step 2: Install the App (Simulator Only)
+
 ```bash
-./claude/scripts/capture-logs com.example.appname
+# Install on booted simulator
+xcrun simctl install booted \
+  "./build/DerivedData/Build/Products/Debug-iphonesimulator/Orchestrator.app"
+
+# For visionOS
+xcrun simctl install booted \
+  "./build/DerivedData/Build/Products/Debug-xrsimulator/YourApp.app"
 ```
 
-### Step 2: Launch the app in Xcode
+**Expected:** Silent success (no output)
+
+**Verify installation:**
 ```bash
-# User runs: Cmd+R in Xcode
-# OR build and run via command line
+xcrun simctl list apps booted | grep -i orchestrator
 ```
 
-### Step 3: Use the app / reproduce the issue
+### Step 3: Start Log Capture
+
+**For Simulator:**
 ```bash
-# Let the app run and generate logs
-# Reproduce the bug or test the feature
+./.claude/scripts/capture-logs com.groovejones.orchestrator
 ```
 
-### Step 4: Stop capture
+**For Device:**
 ```bash
-./claude/scripts/stop-logs
+# Device logging uses a different command (see device section below)
+xcrun devicectl device info logs stream \
+  --device <device-id> \
+  --style compact \
+  --predicate 'subsystem == "com.groovejones.orchestrator"' \
+  > ./build/logs/logs-device-$(date +%Y%m%d-%H%M%S).txt &
+
+# Save PID for cleanup
+echo $! > ./build/logs/.last-device-capture-pid
 ```
 
-### Step 5: Search for useful information
+### Step 4: Launch the App
+
+**For Simulator:**
 ```bash
-# Find errors
+xcrun simctl launch booted com.groovejones.orchestrator
+```
+
+**Expected:** `com.groovejones.orchestrator: 56532` (PID number)
+
+**For Device:**
+```bash
+# Launch via Xcode (Cmd+R) or:
+xcrun devicectl device process launch \
+  --device <device-id> \
+  com.groovejones.orchestrator
+```
+
+### Step 5: Wait for Logs (CRITICAL!)
+
+**DO NOT skip this step!** The app needs time to initialize and emit logs.
+
+```bash
+sleep 10
+```
+
+Interact with the app if needed to trigger the behavior you're debugging.
+
+### Step 6: Stop Log Capture
+
+**For Simulator:**
+```bash
+./.claude/scripts/stop-logs
+```
+
+**For Device:**
+```bash
+# Kill the background log process
+kill $(cat ./build/logs/.last-device-capture-pid)
+rm ./build/logs/.last-device-capture-pid
+```
+
+### Step 7: Verify and Search Logs
+
+```bash
+# Check file size (should be > 500 bytes if logs captured)
+ls -lh ./build/logs/logs-*.txt
+
+# View recent logs
+tail -50 ./build/logs/logs-*.txt
+
+# Search for errors
 grep -i error ./build/logs/logs-*.txt
 
-# Find specific classes/methods
-grep "MyViewController" ./build/logs/logs-*.txt
-
-# Show context (3 lines before/after)
-grep -C 3 "ERROR" ./build/logs/logs-*.txt
+# Search with context
+grep -C 3 "stream_state_changed" ./build/logs/logs-*.txt
 ```
+
+**Expected content example:**
+```
+2025-11-21 18:21:09.946 I  Orchestrator[56532:1ceff69] [com.groovejones.orchestrator:streaming] [Orchestrator] [Streaming] stream_receiver_listening | category=streaming component=AppUIModel port=22345
+```
+
+## Device Logging (Physical Devices)
+
+**VERIFIED:** Device logging uses the regular `log stream` command (not simctl or devicectl). When a device is connected via USB, `log stream` automatically captures from it.
+
+### Requirements
+
+1. Device connected via USB
+2. Device in Developer Mode
+3. Device trusted on this Mac
+
+### Verify Device Connection
+
+```bash
+xcrun devicectl list devices
+```
+
+Look for your device with status "connected" or "available (paired)".
+
+### Capture Logs on Device
+
+**Method 1: Manual (works now)**
+
+```bash
+cd /path/to/your/project
+
+# Start log capture from connected device
+xcrun log stream \
+  --level debug \
+  --style compact \
+  --predicate 'subsystem == "com.groovejones.orchestrator"' \
+  > ./build/logs/logs-device-$(date +%Y%m%d-%H%M%S).txt 2>&1 &
+
+# Save the PID manually
+DEVICE_LOG_PID=$!
+echo $DEVICE_LOG_PID > ./build/logs/.last-device-capture-pid
+
+# Launch your app via Xcode (Cmd+R targeting the device)
+
+# Wait for logs to accumulate
+sleep 10
+
+# Stop capture
+kill $(cat ./build/logs/.last-device-capture-pid)
+rm ./build/logs/.last-device-capture-pid
+
+# View logs
+tail -50 ./build/logs/logs-device-*.txt
+```
+
+**Method 2: Using wrapper script (if available)**
+
+The `capture-logs` script is designed for simulators. For devices, use the manual method above until we create a device-specific wrapper.
+
+### Key Differences from Simulator Logging
+
+| Aspect | Simulator | Physical Device |
+|--------|-----------|-----------------|
+| Command | `xcrun simctl spawn booted log stream` | `xcrun log stream` |
+| Device selection | `--simulator <id>` or `booted` | Automatic (connected device) |
+| Multiple devices | Specify simulator ID | May capture from multiple connected devices |
+| Requires | Simulator booted | Device connected via USB |
+
+### Tips for Device Logging
+
+1. **Single device:** If you have multiple devices connected, disconnect extras to avoid mixed logs
+2. **Process filter:** Add `--process Orchestrator` to filter by process name
+3. **Wi-Fi devices:** Device must be on same network and paired for wireless debugging
+4. **Check logs are from device:** Look for device name in log output headers
 
 ## Why Logs Were Empty Before
 
