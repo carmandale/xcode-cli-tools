@@ -22,39 +22,41 @@ This is the VERIFIED working workflow. Follow these steps exactly.
 
 ### Step 1: Build the App
 
-**CRITICAL:** Use `-derivedDataPath` to control build output location. This makes the `.app` file location predictable.
+**CRITICAL:** Use the `./.claude/scripts/xcodebuild` wrapper to capture build output to searchable files. Always include `-derivedDataPath` to make the `.app` file location predictable.
 
 ```bash
 cd /path/to/your/project
 
 # For Simulator (iPad/iPhone)
-xcodebuild \
+./.claude/scripts/xcodebuild \
   -project orchestrator.xcodeproj \
   -scheme orchestrator \
   -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)' \
   -derivedDataPath ./build/DerivedData
 
 # For Simulator (visionOS)
-xcodebuild \
+./.claude/scripts/xcodebuild \
   -project YourApp.xcodeproj \
   -scheme YourApp \
   -destination 'platform=visionOS Simulator,name=Apple Vision Pro' \
   -derivedDataPath ./build/DerivedData
 
 # For Device (iPad/iPhone)
-xcodebuild \
+./.claude/scripts/xcodebuild \
   -project orchestrator.xcodeproj \
   -scheme orchestrator \
   -destination 'generic/platform=iOS' \
   -derivedDataPath ./build/DerivedData
 
 # For Device (visionOS)
-xcodebuild \
+./.claude/scripts/xcodebuild \
   -project YourApp.xcodeproj \
   -scheme YourApp \
   -destination 'generic/platform=visionOS' \
   -derivedDataPath ./build/DerivedData
 ```
+
+**The wrapper captures output to:** `./build/xcodebuild/build-TIMESTAMP.txt`
 
 **Expected output:** `** BUILD SUCCEEDED **`
 
@@ -68,6 +70,18 @@ xcodebuild \
 
 **IMPORTANT:** The `.app` name uses the product name (often capitalized), not the scheme name:
 - Scheme: `orchestrator` → Product: `Orchestrator.app`
+
+**If build fails, search the output:**
+```bash
+# Find the most recent build output
+LAST_BUILD=$(ls -t ./build/xcodebuild/build-*.txt | head -n 1)
+
+# Search for errors
+grep -i "error:" "$LAST_BUILD"
+
+# Search with context (3 lines before/after)
+grep -C 3 -i "error:" "$LAST_BUILD"
+```
 
 ### Step 2: Install the App (Simulator Only)
 
